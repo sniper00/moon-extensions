@@ -1,9 +1,9 @@
-use crate::lua_json::{encode_one, JsonOptions};
+use crate::lua_json::{encode_table, JsonOptions};
 use crate::{moon_log, moon_send, LOG_LEVEL_ERROR, LOG_LEVEL_INFO};
 use dashmap::DashMap;
 use lazy_static::lazy_static;
 use lib_core::context::CONTEXT;
-use lib_lua::laux::{lua_into_userdata, LuaTable};
+use lib_lua::laux::{lua_into_userdata, LuaArgs, LuaTable, LuaValue};
 use lib_lua::luaL_newlib;
 use lib_lua::{self, cstr, ffi, ffi::luaL_Reg, laux, lreg, lreg_null, push_lua_table};
 use sqlx::migrate::MigrateDatabase;
@@ -104,45 +104,82 @@ impl DatabasePool {
         Ok(query)
     }
 
-    async fn query<'a>(&self, request: &DatabaseQuery) -> Result<DatabaseResult, sqlx::Error> {
+    async fn query(&self, request: &DatabaseQuery) -> Result<DatabaseResponse, sqlx::Error> {
         match self {
             DatabasePool::MySql(pool) => {
                 let query = Self::make_query(&request.sql, &request.binds)?;
                 let rows = query.fetch_all(pool).await?;
-                Ok(DatabaseResult::MysqlRows(rows))
+                Ok(DatabaseResponse::MysqlRows(rows))
             }
             DatabasePool::Postgres(pool) => {
                 let query = Self::make_query(&request.sql, &request.binds)?;
                 let rows = query.fetch_all(pool).await?;
-                Ok(DatabaseResult::PgRows(rows))
+                Ok(DatabaseResponse::PgRows(rows))
             }
             DatabasePool::Sqlite(pool) => {
                 let query = Self::make_query(&request.sql, &request.binds)?;
                 let rows = query.fetch_all(pool).await?;
-                Ok(DatabaseResult::SqliteRows(rows))
+                Ok(DatabaseResponse::SqliteRows(rows))
+            }
+        }
+    }
+
+    async fn transaction(
+        &self,
+        requests: &[DatabaseQuery],
+    ) -> Result<DatabaseResponse, sqlx::Error> {
+        match self {
+            DatabasePool::MySql(pool) => {
+                let mut transaction = pool.begin().await?;
+                for request in requests {
+                    let query = Self::make_query(&request.sql, &request.binds)?;
+                    query.execute(&mut *transaction).await?;
+                }
+                transaction.commit().await?;
+                Ok(DatabaseResponse::Transaction)
+            }
+            DatabasePool::Postgres(pool) => {
+                let mut transaction = pool.begin().await?;
+                for request in requests {
+                    let query = Self::make_query(&request.sql, &request.binds)?;
+                    query.execute(&mut *transaction).await?;
+                }
+                transaction.commit().await?;
+                Ok(DatabaseResponse::Transaction)
+            }
+            DatabasePool::Sqlite(pool) => {
+                let mut transaction = pool.begin().await?;
+                for request in requests {
+                    let query = Self::make_query(&request.sql, &request.binds)?;
+                    query.execute(&mut *transaction).await?;
+                }
+                transaction.commit().await?;
+                Ok(DatabaseResponse::Transaction)
             }
         }
     }
 }
 
-enum DatabaseOp {
-    Query(i64, DatabaseQuery), // session, QueryBuilder
+enum DatabaseRequest {
+    Query(u32, i64, DatabaseQuery), //owner, session, QueryBuilder
+    Transaction(u32, i64, Vec<DatabaseQuery>), //owner, session, Vec<QueryBuilder>
     Close(),
 }
 
 #[derive(Clone)]
 struct DatabaseConnection {
-    tx: mpsc::Sender<DatabaseOp>,
+    tx: mpsc::Sender<DatabaseRequest>,
     counter: Arc<AtomicI64>,
 }
 
-enum DatabaseResult {
+enum DatabaseResponse {
     Connect,
     PgRows(Vec<PgRow>),
     MysqlRows(Vec<MySqlRow>),
     SqliteRows(Vec<SqliteRow>),
     Error(sqlx::Error),
     Timeout(String),
+    Transaction,
 }
 
 #[derive(Debug, Clone)]
@@ -161,59 +198,93 @@ struct DatabaseQuery {
     binds: Vec<QueryParams>,
 }
 
-async fn database_handler(
+async fn handle_result(
+    database_url: &str,
+    failed_times: &mut i32,
+    counter: &Arc<AtomicI64>,
     protocol_type: u8,
     owner: u32,
+    session: i64,
+    res: Result<DatabaseResponse, sqlx::Error>,
+) -> bool {
+    match res {
+        Ok(rows) => {
+            moon_send(protocol_type, owner, session, rows);
+            if *failed_times > 0 {
+                moon_log(
+                    owner,
+                    LOG_LEVEL_INFO,
+                    format!(
+                        "Database '{}' recover from error. Retry success.",
+                        database_url
+                    ),
+                );
+            }
+            counter.fetch_sub(1, std::sync::atomic::Ordering::Release);
+            false
+        }
+        Err(err) => {
+            if session != 0 {
+                moon_send(protocol_type, owner, session, DatabaseResponse::Error(err));
+                counter.fetch_sub(1, std::sync::atomic::Ordering::Release);
+                false
+            } else {
+                if *failed_times > 0 {
+                    moon_log(
+                        owner,
+                        LOG_LEVEL_ERROR,
+                        format!(
+                            "Database '{}' error: '{:?}'. Will retry.",
+                            database_url,
+                            err.to_string()
+                        ),
+                    );
+                }
+                *failed_times += 1;
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                true
+            }
+        }
+    }
+}
+
+async fn database_handler(
+    protocol_type: u8,
     pool: &DatabasePool,
-    mut rx: mpsc::Receiver<DatabaseOp>,
+    mut rx: mpsc::Receiver<DatabaseRequest>,
     database_url: &str,
     counter: Arc<AtomicI64>,
 ) {
     while let Some(op) = rx.recv().await {
         let mut failed_times = 0;
         match &op {
-            DatabaseOp::Query(session, query_op) => loop {
-                match pool.query(query_op).await {
-                    Ok(rows) => {
-                        moon_send(protocol_type, owner, *session, rows);
-                        if failed_times > 0 {
-                            moon_log(
-                                owner,
-                                LOG_LEVEL_INFO,
-                                format!(
-                                    "Database '{}' recover from error. Retry success.",
-                                    database_url
-                                ),
-                            );
-                        }
-                        counter.fetch_sub(1, std::sync::atomic::Ordering::Release);
-                        break;
-                    }
-                    Err(err) => {
-                        let session = *session;
-                        if session != 0 {
-                            moon_send(protocol_type, owner, session, DatabaseResult::Error(err));
-                            counter.fetch_sub(1, std::sync::atomic::Ordering::Release);
-                            break;
-                        } else {
-                            if failed_times > 0 {
-                                moon_log(
-                                    owner,
-                                    LOG_LEVEL_ERROR,
-                                    format!(
-                                        "Database '{}' error: '{:?}'. Will retry.",
-                                        database_url,
-                                        err.to_string()
-                                    ),
-                                );
-                            }
-                            failed_times += 1;
-                            tokio::time::sleep(Duration::from_secs(1)).await;
-                        }
-                    }
-                }
-            },
-            DatabaseOp::Close() => {
+            DatabaseRequest::Query(owner, session, query_op) => {
+                while handle_result(
+                    database_url,
+                    &mut failed_times,
+                    &counter,
+                    protocol_type,
+                    *owner,
+                    *session,
+                    pool.query(query_op).await,
+                )
+                .await
+                {}
+            }
+            DatabaseRequest::Transaction(owner, session, query_ops) => {
+                while handle_result(
+                    database_url,
+                    &mut failed_times,
+                    &counter,
+                    protocol_type,
+                    *owner,
+                    *session,
+                    pool.transaction(query_ops).await,
+                )
+                .await
+                {}
+            }
+            DatabaseRequest::Close() => {
                 break;
             }
         }
@@ -241,15 +312,15 @@ extern "C-unwind" fn connect(state: *mut ffi::lua_State) -> c_int {
                         counter: counter.clone(),
                     },
                 );
-                moon_send(protocol_type, owner, session, DatabaseResult::Connect);
-                database_handler(protocol_type, owner, &pool, rx, database_url, counter).await;
+                moon_send(protocol_type, owner, session, DatabaseResponse::Connect);
+                database_handler(protocol_type, &pool, rx, database_url, counter).await;
             }
             Err(err) => {
                 moon_send(
                     protocol_type,
                     owner,
                     session,
-                    DatabaseResult::Timeout(err.to_string()),
+                    DatabaseResponse::Timeout(err.to_string()),
                 );
             }
         };
@@ -259,80 +330,80 @@ extern "C-unwind" fn connect(state: *mut ffi::lua_State) -> c_int {
     1
 }
 
-extern "C-unwind" fn query(state: *mut ffi::lua_State) -> c_int {
-    let conn = laux::lua_touserdata::<DatabaseConnection>(state, 1)
-        .expect("Invalid database connect pointer");
-
+fn get_query_param(state: *mut ffi::lua_State, i: i32) -> Result<QueryParams, String> {
     let options = JsonOptions::default();
 
-    let session: i64 = laux::lua_get(state, 2);
+    let res = match LuaValue::from_stack(state, i) {
+        LuaValue::Boolean(val) => QueryParams::Bool(val),
+        LuaValue::Number(val) => QueryParams::Float(val),
+        LuaValue::Integer(val) => QueryParams::Int(val),
+        LuaValue::String(val) => {
+            if val.starts_with(b"{") || val.starts_with(b"[") {
+                if let Ok(value) = serde_json::from_slice::<serde_json::Value>(val) {
+                    QueryParams::Json(value)
+                } else {
+                    QueryParams::Text(unsafe { String::from_utf8_unchecked(val.to_vec()) })
+                }
+            } else {
+                QueryParams::Text(unsafe { String::from_utf8_unchecked(val.to_vec()) })
+            }
+        }
+        LuaValue::Table(val) => {
+            let mut buffer = Vec::new();
+            if let Err(err) = encode_table(&mut buffer, &val, 0, false, &options) {
+                drop(buffer);
+                laux::lua_error(state, &err);
+            }
+            if buffer[0] == b'{' || buffer[0] == b'[' {
+                if let Ok(value) = serde_json::from_slice::<serde_json::Value>(buffer.as_slice()) {
+                    QueryParams::Json(value)
+                } else {
+                    QueryParams::Bytes(buffer)
+                }
+            } else {
+                QueryParams::Bytes(buffer)
+            }
+        }
+        _t => {
+            return Err(format!(
+                "get_query_param: unsupport value type :{}",
+                laux::type_name(state, i)
+            ));
+        }
+    };
+    Ok(res)
+}
 
-    let sql = laux::lua_get::<&str>(state, 3);
+extern "C-unwind" fn query(state: *mut ffi::lua_State) -> c_int {
+    let mut args = LuaArgs::new(1);
+    let conn = laux::lua_touserdata::<DatabaseConnection>(state, args.iter_arg())
+        .expect("Invalid database connect pointer");
+
+    let owner = laux::lua_get(state, args.iter_arg());
+    let session = laux::lua_get(state, args.iter_arg());
+
+    let sql = laux::lua_get::<&str>(state, args.iter_arg());
     let mut params = Vec::new();
     let top = laux::lua_top(state);
-    for i in 4..=top {
-        let ltype = laux::lua_type(state, i);
-        match ltype {
-            laux::LuaType::Boolean => {
-                if laux::lua_opt::<bool>(state, i).unwrap_or_default() {
-                    params.push(QueryParams::Bool(true));
-                } else {
-                    params.push(QueryParams::Bool(false));
-                }
+    for i in args.iter_arg()..=top {
+        let param = get_query_param(state, i);
+        match param {
+            Ok(value) => {
+                params.push(value);
             }
-            laux::LuaType::Number => {
-                if laux::is_integer(state, i) {
-                    params.push(QueryParams::Int(laux::lua_to::<i64>(state, i)));
-                } else {
-                    params.push(QueryParams::Float(laux::lua_to::<f64>(state, i)));
-                }
-            }
-            laux::LuaType::String => {
-                let s = laux::lua_get::<&str>(state, i);
-                if s.starts_with('{') || s.starts_with('[') {
-                    if let Ok(value) = serde_json::from_str::<serde_json::Value>(s) {
-                        params.push(QueryParams::Json(value));
-                    } else {
-                        params.push(QueryParams::Text(s.to_string()));
-                    }
-                } else {
-                    params.push(QueryParams::Text(s.to_string()));
-                }
-            }
-            laux::LuaType::Table => {
-                let mut buffer = Vec::new();
-                if let Err(err) = encode_one(state, &mut buffer, i, 0, false, &options) {
-                    drop(buffer);
-                    drop(params);
-                    laux::lua_error(state, &err);
-                }
-                if buffer[0] == b'{' || buffer[0] == b'[' {
-                    if let Ok(value) =
-                        serde_json::from_slice::<serde_json::Value>(buffer.as_slice())
-                    {
-                        params.push(QueryParams::Json(value));
-                    } else {
-                        params.push(QueryParams::Bytes(buffer));
-                    }
-                } else {
-                    params.push(QueryParams::Bytes(buffer));
-                }
-            }
-            _ => {
-                drop(params);
-                laux::lua_error(
+            Err(err) => {
+                push_lua_table!(
                     state,
-                    format!(
-                        "concat: unsupport value type :{}",
-                        laux::type_name(state, ltype as i32)
-                    )
-                    .as_str(),
+                    "kind" => "ERROR",
+                    "message" => err
                 );
+                return 1;
             }
         }
     }
 
-    match conn.tx.try_send(DatabaseOp::Query(
+    match conn.tx.try_send(DatabaseRequest::Query(
+        owner,
         session,
         DatabaseQuery {
             sql: sql.to_string(),
@@ -356,11 +427,86 @@ extern "C-unwind" fn query(state: *mut ffi::lua_State) -> c_int {
     }
 }
 
+struct TransactionQuerys {
+    querys: Vec<DatabaseQuery>,
+}
+
+extern "C-unwind" fn push_transaction_query(state: *mut ffi::lua_State) -> c_int {
+    let querys = laux::lua_touserdata::<TransactionQuerys>(state, 1)
+        .expect("Invalid transaction query pointer");
+
+    let sql = laux::lua_get::<&str>(state, 2);
+    let mut params = Vec::new();
+    let top = laux::lua_top(state);
+    for i in 3..=top {
+        let param = get_query_param(state, i);
+        match param {
+            Ok(value) => {
+                params.push(value);
+            }
+            Err(err) => {
+                drop(params);
+                laux::lua_error(state, err.as_ref());
+            }
+        }
+    }
+
+    querys.querys.push(DatabaseQuery {
+        sql: sql.to_string(),
+        binds: params,
+    });
+
+    0
+}
+
+extern "C-unwind" fn make_transaction(state: *mut ffi::lua_State) -> c_int {
+    laux::lua_newuserdata(
+        state,
+        TransactionQuerys { querys: Vec::new() },
+        cstr!("sqlx_transaction_metatable"),
+        &[lreg!("push", push_transaction_query), lreg_null!()],
+    );
+    1
+}
+
+extern "C-unwind" fn transaction(state: *mut ffi::lua_State) -> c_int {
+    let mut args = LuaArgs::new(1);
+    let conn = laux::lua_touserdata::<DatabaseConnection>(state, args.iter_arg())
+        .expect("Invalid database connect pointer");
+
+    let owner = laux::lua_get(state, args.iter_arg());
+    let session = laux::lua_get(state, args.iter_arg());
+
+    let querys = laux::lua_touserdata::<TransactionQuerys>(state, args.iter_arg())
+        .expect("Invalid transaction query pointer");
+
+    match conn.tx.try_send(DatabaseRequest::Transaction(
+        owner,
+        session,
+        std::mem::take(&mut querys.querys),
+    )) {
+        Ok(_) => {
+            conn.counter
+                .fetch_add(1, std::sync::atomic::Ordering::Release);
+            laux::lua_push(state, session);
+            1
+        }
+        Err(err) => {
+            push_lua_table!(
+                state,
+                "kind" => "ERROR",
+                "message" => err.to_string()
+            );
+            1
+        }
+    }
+}
+
 extern "C-unwind" fn close(state: *mut ffi::lua_State) -> c_int {
     let conn = laux::lua_touserdata::<DatabaseConnection>(state, 1)
         .expect("Invalid database connect pointer");
 
-    match conn.tx.try_send(DatabaseOp::Close()) {
+    match conn.tx.try_send(DatabaseRequest::Close()) {
         Ok(_) => {
             laux::lua_push(state, true);
             1
@@ -414,29 +560,29 @@ where
             match row.try_get_raw(*index) {
                 Ok(value) => match *column_type_name {
                     "NULL" => {
-                        row_table.set(*column_name, ffi::LUA_TNIL);
+                        row_table.rawset(*column_name, ffi::LUA_TNIL);
                     }
                     "BOOL" | "BOOLEAN" => {
-                        row_table.set(
+                        row_table.rawset(
                             *column_name,
                             sqlx::decode::Decode::decode(value).unwrap_or(false),
                         );
                     }
                     "INT2" | "INT4" | "INT8" | "TINYINT" | "SMALLINT" | "INT" | "MEDIUMINT"
                     | "BIGINT" | "INTEGER" => {
-                        row_table.set(
+                        row_table.rawset(
                             *column_name,
                             sqlx::decode::Decode::decode(value).unwrap_or(0),
                         );
                     }
                     "FLOAT4" | "FLOAT8" | "NUMERIC" | "FLOAT" | "DOUBLE" | "REAL" => {
-                        row_table.set(
+                        row_table.rawset(
                             *column_name,
                             sqlx::decode::Decode::decode(value).unwrap_or(0.0),
                         );
                     }
                     "TEXT" => {
-                        row_table.set(
+                        row_table.rawset(
                             *column_name,
                             sqlx::decode::Decode::decode(value).unwrap_or(""),
                         );
@@ -444,7 +590,7 @@ where
                     _ => {
                         let column_value: &[u8] =
                             sqlx::decode::Decode::decode(value).unwrap_or(b"");
-                        row_table.set(*column_name, column_value);
+                        row_table.rawset(*column_name, column_value);
                     }
                 },
                 Err(error) => {
@@ -467,11 +613,16 @@ extern "C-unwind" fn find_connection(state: *mut ffi::lua_State) -> c_int {
     let name = laux::lua_get::<&str>(state, 1);
     match DATABASE_CONNECTIONSS.get(name) {
         Some(pair) => {
-            let l = [lreg!("query", query), lreg!("close", close), lreg_null!()];
+            let l = [
+                lreg!("query", query),
+                lreg!("transaction", transaction),
+                lreg!("close", close),
+                lreg_null!(),
+            ];
             if laux::lua_newuserdata(
                 state,
                 pair.value().clone(),
-                cstr!("database_metatable"),
+                cstr!("sqlx_connection_metatable"),
                 l.as_ref(),
             )
             .is_none()
@@ -489,10 +640,10 @@ extern "C-unwind" fn find_connection(state: *mut ffi::lua_State) -> c_int {
 
 extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
     laux::luaL_checkstack(state, 6, std::ptr::null());
-    let result = lua_into_userdata::<DatabaseResult>(state, 1);
+    let result = lua_into_userdata::<DatabaseResponse>(state, 1);
 
     match *result {
-        DatabaseResult::PgRows(rows) => {
+        DatabaseResponse::PgRows(rows) => {
             return process_rows::<Postgres>(state, &rows)
                 .map_err(|e| {
                     push_lua_table!(
@@ -503,7 +654,7 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
                 })
                 .unwrap_or(1);
         }
-        DatabaseResult::MysqlRows(rows) => {
+        DatabaseResponse::MysqlRows(rows) => {
             return process_rows::<MySql>(state, &rows)
                 .map_err(|e| {
                     push_lua_table!(
@@ -514,7 +665,7 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
                 })
                 .unwrap_or(1);
         }
-        DatabaseResult::SqliteRows(rows) => {
+        DatabaseResponse::SqliteRows(rows) => {
             return process_rows::<Sqlite>(state, &rows)
                 .map_err(|e| {
                     push_lua_table!(
@@ -525,15 +676,21 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
                 })
                 .unwrap_or(1);
         }
-
-        DatabaseResult::Connect => {
+        DatabaseResponse::Transaction => {
+            push_lua_table!(
+                state,
+                "message" => "ok"
+            );
+            return 1;
+        }
+        DatabaseResponse::Connect => {
             push_lua_table!(
                 state,
                 "message" => "success"
             );
             return 1;
         }
-        DatabaseResult::Error(err) => match err.as_database_error() {
+        DatabaseResponse::Error(err) => match err.as_database_error() {
             Some(db_err) => {
                 push_lua_table!(
                     state,
@@ -549,7 +706,7 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
                 );
             }
         },
-        DatabaseResult::Timeout(err) => {
+        DatabaseResponse::Timeout(err) => {
             push_lua_table!(
                 state,
                 "kind" => "TIMEOUT",
@@ -564,7 +721,7 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
 extern "C-unwind" fn stats(state: *mut ffi::lua_State) -> c_int {
     let table = LuaTable::new(state, 0, DATABASE_CONNECTIONSS.len());
     DATABASE_CONNECTIONSS.iter().for_each(|pair| {
-        table.set(
+        table.rawset(
             pair.key().as_str(),
             pair.value()
                 .counter
@@ -582,6 +739,7 @@ pub extern "C-unwind" fn luaopen_rust_sqlx(state: *mut ffi::lua_State) -> c_int 
         lreg!("find_connection", find_connection),
         lreg!("decode", decode),
         lreg!("stats", stats),
+        lreg!("make_transaction", make_transaction),
         lreg_null!(),
     ];
 

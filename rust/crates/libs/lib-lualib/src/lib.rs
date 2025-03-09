@@ -4,6 +4,7 @@ pub mod lua_http;
 pub mod lua_json;
 pub mod lua_runtime;
 pub mod lua_sqlx;
+pub mod lua_mongodb;
 
 pub fn moon_send<T>(protocol_type: u8, owner: u32, session: i64, res: T) {
     unsafe extern "C-unwind" {
