@@ -3,7 +3,7 @@ use crate::{moon_log, moon_send, LOG_LEVEL_ERROR, LOG_LEVEL_INFO};
 use dashmap::DashMap;
 use lazy_static::lazy_static;
 use lib_core::context::CONTEXT;
-use lib_lua::laux::{lua_into_userdata, LuaArgs, LuaTable, LuaValue};
+use lib_lua::laux::{lua_into_userdata, LuaArgs, LuaNil, LuaTable, LuaValue};
 use lib_lua::luaL_newlib;
 use lib_lua::{self, cstr, ffi, ffi::luaL_Reg, laux, lreg, lreg_null, push_lua_table};
 use sqlx::migrate::MigrateDatabase;
@@ -11,6 +11,7 @@ use sqlx::mysql::MySqlRow;
 use sqlx::postgres::{PgPoolOptions, PgRow};
 use sqlx::sqlite::SqliteRow;
 use sqlx::ColumnIndex;
+use sqlx::ValueRef;
 use sqlx::{
     Column, Database, MySql, MySqlPool, PgPool, Postgres, Row, Sqlite, SqlitePool, TypeInfo,
 };
@@ -549,18 +550,18 @@ where
             .iter()
             .enumerate()
             .for_each(|(index, column)| {
-                column_info.push((index, column.name(), column.type_info().name()));
+                column_info.push((index, column.name()));
             });
     }
 
     let mut i = 0;
     for row in rows.iter() {
         let row_table = LuaTable::new(state, 0, row.len());
-        for (index, column_name, column_type_name) in column_info.iter() {
+        for (index, column_name) in column_info.iter() {
             match row.try_get_raw(*index) {
-                Ok(value) => match *column_type_name {
+                Ok(value) => match value.type_info().name() {
                     "NULL" => {
-                        row_table.rawset(*column_name, ffi::LUA_TNIL);
+                        row_table.rawset(*column_name, LuaNil {});
                     }
                     "BOOL" | "BOOLEAN" => {
                         row_table.rawset(

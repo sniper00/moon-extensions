@@ -85,10 +85,7 @@ struct DatabaseState {
 }
 
 impl DatabaseState {
-    async fn connect(
-        protocol_type: u8,
-        database_url: String
-    ) -> Result<Self, Error> {
+    async fn connect(protocol_type: u8, database_url: String) -> Result<Self, Error> {
         let options = ClientOptions::parse(&database_url).await?;
 
         Ok(DatabaseState {
@@ -102,13 +99,13 @@ impl DatabaseState {
         match res {
             Ok(res) => {
                 if session != 0 {
-                    moon_send(self.protocol_type as u8, owner as u32, session, res);
+                    moon_send(self.protocol_type, owner as u32, session, res);
                 }
             }
             Err(err) => {
                 if session != 0 {
                     moon_send(
-                        self.protocol_type as u8,
+                        self.protocol_type,
                         owner as u32,
                         session,
                         DatabaseResponse::Error(err),
@@ -151,9 +148,7 @@ async fn database_handler(
                 state.send_result(
                     owner,
                     session,
-                    coll.insert_one(doc)
-                        .await
-                        .map(DatabaseResponse::InsertOne),
+                    coll.insert_one(doc).await.map(DatabaseResponse::InsertOne),
                 );
             }
             DatabaseRequest::InsertMany(owner, session, db_name, collection_name, docs) => {
@@ -239,7 +234,7 @@ async fn database_handler(
             DatabaseRequest::Find(owner, session, db_name, collection_name, filter, options) => {
                 let db = state.client.database(&db_name);
                 let coll: Collection<Document> = db.collection(&collection_name);
-                let result = coll.find(filter.clone()).with_options( *options).await;
+                let result = coll.find(filter.clone()).with_options(*options).await;
                 match result {
                     Ok(cur) => {
                         state.send_result(
@@ -312,7 +307,8 @@ async fn database_handler(
                 state.send_result(
                     owner,
                     session,
-                    coll.create_index(*index).with_options(*options)
+                    coll.create_index(*index)
+                        .with_options(*options)
                         .await
                         .map(DatabaseResponse::CreateIndex),
                 );
@@ -337,12 +333,7 @@ extern "C-unwind" fn connect(state: *mut ffi::lua_State) -> c_int {
     let name: &str = laux::lua_get(state, args.iter_arg());
 
     CONTEXT.tokio_runtime.spawn(async move {
-        match DatabaseState::connect(
-            protocol_type,
-            database_url.to_string()
-        )
-        .await
-        {
+        match DatabaseState::connect(protocol_type, database_url.to_string()).await {
             Ok(state) => {
                 let (tx, rx) = mpsc::unbounded_channel();
                 let counter = Arc::new(AtomicI64::new(0));
@@ -446,9 +437,8 @@ fn extract_find_options(options: LuaTable) -> Result<FindOptions, String> {
                 }
                 "read_concern" => {
                     if let LuaValue::String(val) = value {
-                        find_options.read_concern = Some(ReadConcern::custom(
-                            String::from_utf8_lossy(val).into_owned(),
-                        ));
+                        find_options.read_concern =
+                            Some(ReadConcern::custom(String::from_utf8_lossy(val)));
                     }
                 }
                 _ => {
@@ -1037,7 +1027,6 @@ fn bson_to_lua(state: *mut ffi::lua_State, value: &Bson) -> Result<(), String> {
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C-unwind" fn luaopen_rust_mongodb(state: *mut ffi::lua_State) -> c_int {
-
     let l = [
         lreg!("connect", connect),
         lreg!("find_connection", find_connection),
