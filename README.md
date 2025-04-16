@@ -6,12 +6,13 @@ This library provides Lua extensions for [Moon](https://github.com/sniper00/moon
 
 ## Option 1: Use Precompiled Releases
 
-You can directly use the precompiled releases.
+You can directly use the precompiled releases. [Download](https://github.com/sniper00/moon-extensions/releases/tag/prebuilt).
 
 ## Option 2: Manual Compilation
 
 To compile the project, follow these steps:
 
+- `git clone --recursive https://github.com/sniper00/moon-extensions.git`
 - [Install Premake5](https://premake.github.io/download).
 - Run `premake5 build` `premake5 publish`.
 
