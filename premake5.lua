@@ -118,7 +118,7 @@ newaction {
         os.execute("git submodule init")
         os.execute("git submodule update --recursive")
         --- Build moon
-        os.execute([[cd moon && premake5 build]])
+        os.execute([[cd moon && premake5 build --release]])
 
         -- Build Cpp library
         local host = os.host()
