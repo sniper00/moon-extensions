@@ -18,5 +18,7 @@
 *.d
 .vs/
 .vscode/
+*.sln
 build/
 rust/target/
+Makefile

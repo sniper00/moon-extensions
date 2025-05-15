@@ -4,3 +4,9 @@
 [submodule "moon"]
 	path = moon
 	url = https://github.com/sniper00/moon.git
+[submodule "3rd/sproto"]
+	path = 3rd/sproto
+	url = https://github.com/cloudwu/sproto.git
+[submodule "3rd/lpeg"]
+	path = 3rd/lpeg
+	url = https://github.com/roberto-ieru/LPeg.git

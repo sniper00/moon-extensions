@@ -89,8 +89,8 @@ end
 
 ----------------------Lua C/C++ Modules------------------------
 
-add_lua_module("./cpp/sproto", "sproto")
-add_lua_module("./cpp/lpeg", "lpeg")
+add_lua_module("3rd/sproto", "sproto")
+add_lua_module("3rd/lpeg", "lpeg")
 add_lua_module(
 "3rd/math3d",
 "math3d",
@@ -133,11 +133,11 @@ newaction {
                 os.execute(string.format('"%s%s" -maxcpucount:4 extensions.sln /t:build /p:Configuration=Release ', string_trim(command), [[\MSBuild\Current\Bin\MSBuild.exe]]))
             end,
             linux = function ()
-                os.execute("premake5 gmake2")
+                os.execute("premake5 gmake")
                 os.execute( "make -j4 config=release")
             end,
             macosx = function ()
-                os.execute("premake5 gmake2 --cc=clang")
+                os.execute("premake5 gmake --cc=clang")
                 os.execute("make -j4 config=release")
             end,
         }
@@ -184,5 +184,21 @@ newaction {
             os.execute([[mv moon/*.zip ./]])
         end
 
+    end
+}
+
+-- Helper function to remove build artifacts
+local function cleanup()
+    os.remove("moon")
+    os.rmdir("build")
+end
+
+-- Custom action: clean
+-- Removes build outputs and intermediate files.
+newaction {
+    trigger = "clean",
+    description = "Remove build artifacts",
+    execute = function ()
+        cleanup()
     end
 }
