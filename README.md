@@ -290,7 +290,7 @@ end)
 
 ## C/Cpp
 
-### 1. lpeg
+### 1. [lpeg](https://github.com/roberto-ieru/LPeg)
 
 ### 2. [math3d](https://github.com/cloudwu/math3d)
 
