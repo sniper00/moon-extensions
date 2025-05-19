@@ -1,13 +1,8 @@
 name: prebuild
 permissions:
   contents: write
-on:
-  schedule:
-    - cron: '0 10 * * 1-5'
-  push:
-    paths:
-      - '.github/workflows/prebuild.yml'
-  workflow_dispatch: {}
+# Run this workflow every time a new commit pushed to your repository
+on: [push, pull_request]
 
 jobs:
   init:
