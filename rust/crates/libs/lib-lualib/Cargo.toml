@@ -39,6 +39,9 @@ lazy_static = "1.5.0"
 tokio-tungstenite = { version = "0.27", features = ["rustls-tls-webpki-roots"]}
 futures-util = { version = "0.3.28", default-features = false, features = ["sink", "std"] }
 
+ring = "0.17"
+rand = "0.9"
+
 # opendal = { version = "0.50.1", features = [
 #   # These are default features before v0.46. TODO: change to optional features
 #   "services-azblob",
