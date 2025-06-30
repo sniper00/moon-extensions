@@ -288,6 +288,149 @@ moon.async(function()
 end)
 ```
 
+### 5. Crypto
+
+```lua
+-- AES Encryption/Decryption Test Script
+local crypto = require("rust.crypto")
+
+print("=== AES Encryption/Decryption Test ===")
+
+-- Test 1: Basic encryption/decryption
+print("\n1. Basic encryption/decryption test:")
+
+-- Generate random key
+local key = crypto.generate_key() -- Default 32 bytes for AES-256
+print("Generated key length:", #key, "bytes")
+
+-- Data to encrypt
+local data = "Hello, AES-GCM encryption!"
+print("Original data:", data)
+
+-- Encrypt data
+local encrypted_data, nonce = crypto.aes_encrypt(data, key)
+print("Encrypted data length:", #encrypted_data, "bytes")
+print("Nonce length:", #nonce, "bytes")
+
+-- Decrypt data
+local decrypted_data = crypto.aes_decrypt(encrypted_data, key, nonce)
+print("Decrypted data:", decrypted_data)
+
+-- Verify result
+if data == decrypted_data then
+    print("✓ Encryption/decryption test passed")
+else
+    print("✗ Encryption/decryption test failed")
+end
+
+-- Test 2: Using custom nonce
+print("\n2. Custom nonce test:")
+
+local custom_nonce = crypto.generate_nonce()
+print("Custom nonce length:", #custom_nonce, "bytes")
+
+local data2 = "Testing with custom nonce"
+local encrypted_data2, returned_nonce = crypto.aes_encrypt(data2, key, custom_nonce)
+local decrypted_data2 = crypto.aes_decrypt(encrypted_data2, key, custom_nonce)
+
+print("Original data:", data2)
+print("Decrypted data:", decrypted_data2)
+
+if data2 == decrypted_data2 then
+    print("✓ Custom nonce test passed")
+else
+    print("✗ Custom nonce test failed")
+end
+
+-- Test 3: Generate keys of different lengths
+print("\n3. Different key length test:")
+
+local key16 = crypto.generate_key(16) -- 16 bytes for AES-128
+local key24 = crypto.generate_key(24) -- 24 bytes for AES-192
+local key32 = crypto.generate_key(32) -- 32 bytes for AES-256
+
+print("16-byte key length:", #key16)
+print("24-byte key length:", #key24)
+print("32-byte key length:", #key32)
+
+-- Test 4: AES-128 encryption/decryption
+print("\n4. AES-128 encryption/decryption test:")
+
+local aes128_key = crypto.generate_key(16) -- 16 bytes for AES-128
+local aes128_data = "Testing AES-128 GCM encryption!"
+print("AES-128 key length:", #aes128_key, "bytes")
+print("Original data:", aes128_data)
+
+-- Encrypt with AES-128
+local aes128_encrypted, aes128_nonce = crypto.aes_encrypt(aes128_data, aes128_key)
+print("AES-128 encrypted data length:", #aes128_encrypted, "bytes")
+print("AES-128 nonce length:", #aes128_nonce, "bytes")
+
+-- Decrypt with AES-128
+local aes128_decrypted = crypto.aes_decrypt(aes128_encrypted, aes128_key, aes128_nonce)
+print("AES-128 decrypted data:", aes128_decrypted)
+
+-- Verify AES-128 result
+if aes128_data == aes128_decrypted then
+    print("✓ AES-128 encryption/decryption test passed")
+else
+    print("✗ AES-128 encryption/decryption test failed")
+end
+
+-- Test 5: Binary data encryption/decryption
+print("\n5. Binary data test:")
+
+local binary_data = string.rep("\x00\x01\x02\x03\x04\x05\x06\x07", 10)
+print("Binary data length:", #binary_data, "bytes")
+
+local encrypted_binary, nonce_binary = crypto.aes_encrypt(binary_data, key)
+local decrypted_binary = crypto.aes_decrypt(encrypted_binary, key, nonce_binary)
+
+if binary_data == decrypted_binary then
+    print("✓ Binary data test passed")
+else
+    print("✗ Binary data test failed")
+end
+
+-- Test 6: AES-128 vs AES-256 comparison
+print("\n6. AES-128 vs AES-256 comparison test:")
+
+local test_data = "This is a test message for comparing AES-128 and AES-256 performance and functionality."
+local aes128_key_comp = crypto.generate_key(16) -- AES-128 key
+local aes256_key_comp = crypto.generate_key(32) -- AES-256 key
+
+print("Test data:", test_data)
+print("Test data length:", #test_data, "bytes")
+
+-- AES-128 encryption
+local aes128_enc, aes128_nonce_comp = crypto.aes_encrypt(test_data, aes128_key_comp)
+local aes128_dec = crypto.aes_decrypt(aes128_enc, aes128_key_comp, aes128_nonce_comp)
+
+-- AES-256 encryption  
+local aes256_enc, aes256_nonce_comp = crypto.aes_encrypt(test_data, aes256_key_comp)
+local aes256_dec = crypto.aes_decrypt(aes256_enc, aes256_key_comp, aes256_nonce_comp)
+
+print("AES-128 encrypted length:", #aes128_enc, "bytes")
+print("AES-256 encrypted length:", #aes256_enc, "bytes")
+
+-- Verify both results
+local aes128_ok = (test_data == aes128_dec)
+local aes256_ok = (test_data == aes256_dec)
+
+if aes128_ok and aes256_ok then
+    print("✓ Both AES-128 and AES-256 comparison test passed")
+elseif aes128_ok then
+    print("✓ AES-128 passed, ✗ AES-256 failed")
+elseif aes256_ok then
+    print("✗ AES-128 failed, ✓ AES-256 passed")
+else
+    print("✗ Both AES-128 and AES-256 comparison test failed")
+end
+
+print("\n=== Test Complete ===")
+
+```
+
 ## C/Cpp
 
 ### 1. [lpeg](https://github.com/roberto-ieru/LPeg)
