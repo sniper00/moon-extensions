@@ -25,7 +25,7 @@ local M = {}
 ---@param timeout? integer Connect timeout. Default 5000ms
 ---@return Websocket
 function M.connect(url, timeout)
-    local response = moon.wait(c.connect({
+    local response, err = moon.wait(c.connect({
         protocol_type = protocol_type,
         owner = moon.id,
         session = moon.next_sequence(),
@@ -34,7 +34,7 @@ function M.connect(url, timeout)
     }))
 
     if not response then
-        error(string.format("connect failed: %s", response))
+        error(string.format("connect failed: %s", err))
     end
 
     local o = {
