@@ -14,6 +14,8 @@ To compile the project, follow these steps:
 
 - `git clone --recursive https://github.com/sniper00/moon-extensions.git`
 - [Install Premake5](https://premake.github.io/download).
+- [Install Rust](https://www.rust-lang.org/)
+- Make sure your compiler(vs2022 17.5+, gcc 9.3+, clang 9.0+) support C++17
 - Run `premake5 build` `premake5 publish`.
 
 After compiling, the `clib` and `lualib` directories will be automatically copied to the moon directory.
