@@ -2,6 +2,18 @@
 
 This library provides Lua extensions for [Moon](https://github.com/sniper00/moon), implemented in Rust and C/C++. By using Rust, we can use its ecosystem, including the `tokio` runtime.
 
+- [Libraries](#libraries)
+    - [Rust](#rust)
+        - [1. Excel Reader](#1-excel-reader)
+        - [2. Https Client](#2-https-client)
+        - [3. Sqlx](#3-sqlx)
+        - [4. MongoDB](#4-mongodb)
+        - [5. Crypto](#5-crypto)
+    - [C/Cpp](#ccpp)
+        - [1. lpeg](#1-lpeghttpsgithubcomroberto-ierulpeg)
+        - [2. math3d](#2-math3dhttpsgithubcomcloudwumath3d)
+        - [3. sproto](#3-sprotohttpsgithubcomcloudwusproto)
+
 # Usage
 
 ## Option 1: Use Precompiled Releases
