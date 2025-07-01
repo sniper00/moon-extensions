@@ -3,7 +3,7 @@ use crate::{moon_log, moon_send, LOG_LEVEL_ERROR, LOG_LEVEL_INFO};
 use dashmap::DashMap;
 use lazy_static::lazy_static;
 use lib_core::context::CONTEXT;
-use lib_lua::laux::{lua_into_userdata, LuaArgs, LuaNil, LuaTable, LuaValue};
+use lib_lua::laux::{lua_into_userdata, LuaArgs, LuaNil, LuaState, LuaTable, LuaValue};
 use lib_lua::luaL_newlib;
 use lib_lua::{self, cstr, ffi, ffi::luaL_Reg, laux, lreg, lreg_null, push_lua_table};
 use sqlx::migrate::MigrateDatabase;
@@ -292,7 +292,7 @@ async fn database_handler(
     }
 }
 
-extern "C-unwind" fn connect(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn connect(state: LuaState) -> c_int {
     let protocol_type: u8 = laux::lua_get(state, 1);
     let owner = laux::lua_get(state, 2);
     let session: i64 = laux::lua_get(state, 3);
@@ -331,7 +331,7 @@ extern "C-unwind" fn connect(state: *mut ffi::lua_State) -> c_int {
     1
 }
 
-fn get_query_param(state: *mut ffi::lua_State, i: i32) -> Result<QueryParams, String> {
+fn get_query_param(state: LuaState, i: i32) -> Result<QueryParams, String> {
     let options = JsonOptions::default();
 
     let res = match LuaValue::from_stack(state, i) {
@@ -375,7 +375,7 @@ fn get_query_param(state: *mut ffi::lua_State, i: i32) -> Result<QueryParams, St
     Ok(res)
 }
 
-extern "C-unwind" fn query(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn query(state: LuaState) -> c_int {
     let mut args = LuaArgs::new(1);
     let conn = laux::lua_touserdata::<DatabaseConnection>(state, args.iter_arg())
         .expect("Invalid database connect pointer");
@@ -432,7 +432,7 @@ struct TransactionQuerys {
     querys: Vec<DatabaseQuery>,
 }
 
-extern "C-unwind" fn push_transaction_query(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn push_transaction_query(state: LuaState) -> c_int {
     let querys = laux::lua_touserdata::<TransactionQuerys>(state, 1)
         .expect("Invalid transaction query pointer");
 
@@ -460,7 +460,7 @@ extern "C-unwind" fn push_transaction_query(state: *mut ffi::lua_State) -> c_int
     0
 }
 
-extern "C-unwind" fn make_transaction(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn make_transaction(state: LuaState) -> c_int {
     laux::lua_newuserdata(
         state,
         TransactionQuerys { querys: Vec::new() },
@@ -470,7 +470,7 @@ extern "C-unwind" fn make_transaction(state: *mut ffi::lua_State) -> c_int {
     1
 }
 
-extern "C-unwind" fn transaction(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn transaction(state: LuaState) -> c_int {
     let mut args = LuaArgs::new(1);
     let conn = laux::lua_touserdata::<DatabaseConnection>(state, args.iter_arg())
         .expect("Invalid database connect pointer");
@@ -503,7 +503,7 @@ extern "C-unwind" fn transaction(state: *mut ffi::lua_State) -> c_int {
     }
 }
 
-extern "C-unwind" fn close(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn close(state: LuaState) -> c_int {
     let conn = laux::lua_touserdata::<DatabaseConnection>(state, 1)
         .expect("Invalid database connect pointer");
 
@@ -524,7 +524,7 @@ extern "C-unwind" fn close(state: *mut ffi::lua_State) -> c_int {
 }
 
 fn process_rows<'a, DB>(
-    state: *mut ffi::lua_State,
+    state: LuaState,
     rows: &'a [<DB as Database>::Row],
 ) -> Result<i32, String>
 where
@@ -610,7 +610,7 @@ where
     Ok(1)
 }
 
-extern "C-unwind" fn find_connection(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn find_connection(state: LuaState) -> c_int {
     let name = laux::lua_get::<&str>(state, 1);
     match DATABASE_CONNECTIONSS.get(name) {
         Some(pair) => {
@@ -639,7 +639,7 @@ extern "C-unwind" fn find_connection(state: *mut ffi::lua_State) -> c_int {
     1
 }
 
-extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn decode(state: LuaState) -> c_int {
     laux::luaL_checkstack(state, 6, std::ptr::null());
     let result = lua_into_userdata::<DatabaseResponse>(state, 1);
 
@@ -719,7 +719,7 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
     1
 }
 
-extern "C-unwind" fn stats(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn stats(state: LuaState) -> c_int {
     let table = LuaTable::new(state, 0, DATABASE_CONNECTIONSS.len());
     DATABASE_CONNECTIONSS.iter().for_each(|pair| {
         table.rawset(
@@ -734,7 +734,7 @@ extern "C-unwind" fn stats(state: *mut ffi::lua_State) -> c_int {
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C-unwind" fn luaopen_rust_sqlx(state: *mut ffi::lua_State) -> c_int {
+pub extern "C-unwind" fn luaopen_rust_sqlx(state: LuaState) -> c_int {
     let l = [
         lreg!("connect", connect),
         lreg!("find_connection", find_connection),

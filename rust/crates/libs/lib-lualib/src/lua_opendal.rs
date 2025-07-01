@@ -10,7 +10,7 @@ use lib_lua::{self, cstr, ffi, ffi::luaL_Reg, laux, lreg, lreg_null};
 use crate::{moon_send_bytes, PTYPE_ERROR};
 
 fn lua_to_schema(
-    state: *mut ffi::lua_State,
+    state: LuaState,
     index: i32,
     schema: &str,
 ) -> Result<od::Operator, od::Error> {
@@ -31,7 +31,7 @@ fn lua_to_schema(
     Ok(op)
 }
 
-extern "C-unwind" fn operator_new(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn operator_new(state: LuaState) -> c_int {
     laux::lua_checktype(state, 2, ffi::LUA_TTABLE);
     let schema: &str = laux::lua_get(state, 1);
     if schema.is_empty() {
@@ -59,7 +59,7 @@ extern "C-unwind" fn operator_new(state: *mut ffi::lua_State) -> c_int {
     1
 }
 
-extern "C-unwind" fn operators(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn operators(state: LuaState) -> c_int {
     laux::lua_checktype(state, 1, ffi::LUA_TUSERDATA);
 
     let op = laux::lua_touserdata::<opendal::Operator>(state, 1);
@@ -197,7 +197,7 @@ extern "C-unwind" fn operators(state: *mut ffi::lua_State) -> c_int {
 /// and that it remains valid for the duration of the function call.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub unsafe extern "C-unwind" fn luaopen_rust_opendal(state: *mut ffi::lua_State) -> c_int {
+pub unsafe extern "C-unwind" fn luaopen_rust_opendal(state: LuaState) -> c_int {
     let l = [lreg!("new", operator_new), lreg_null!()];
 
     ffi::lua_createtable(state, 0, l.len() as c_int);

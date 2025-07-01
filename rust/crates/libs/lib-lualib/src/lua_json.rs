@@ -1,7 +1,7 @@
 use lib_lua::{
     self, cstr,
     ffi::{self, luaL_Reg},
-    laux::{self, LuaStateRef, LuaTable, LuaType, LuaValue},
+    laux::{self, LuaState, LuaTable, LuaType, LuaValue},
     lreg, lreg_null,
 };
 use serde::de::Error;
@@ -55,7 +55,7 @@ impl Default for JsonOptions {
     }
 }
 
-extern "C-unwind" fn set_options(state: LuaStateRef) -> i32 {
+extern "C-unwind" fn set_options(state: LuaState) -> i32 {
     let options = fetch_options(state);
     let key = laux::lua_get::<&str>(state, 1);
     match key {
@@ -82,7 +82,7 @@ extern "C-unwind" fn set_options(state: LuaStateRef) -> i32 {
     1
 }
 
-pub fn fetch_options(state: LuaStateRef) -> &'static mut JsonOptions {
+pub fn fetch_options(state: LuaState) -> &'static mut JsonOptions {
     let opts = laux::lua_touserdata::<JsonOptions>(state, ffi::lua_upvalueindex(1));
     if opts.is_none() {
         laux::lua_error(state, "expect json options");
@@ -280,7 +280,7 @@ pub fn encode_table(
     Ok(())
 }
 
-unsafe extern "C-unwind" fn encode(state: *mut ffi::lua_State) -> c_int {
+unsafe extern "C-unwind" fn encode(state: LuaState) -> c_int {
     ffi::luaL_checkany(state, 1);
 
     {
@@ -302,7 +302,7 @@ unsafe extern "C-unwind" fn encode(state: *mut ffi::lua_State) -> c_int {
 }
 
 #[inline]
-unsafe fn decode_one(state: *mut ffi::lua_State, val: &Value, options: &JsonOptions) {
+unsafe fn decode_one(state: LuaState, val: &Value, options: &JsonOptions) {
     match val {
         Value::Object(map) => {
             laux::luaL_checkstack(state, 6, cstr!("json.decode.object"));
@@ -358,12 +358,12 @@ unsafe fn decode_one(state: *mut ffi::lua_State, val: &Value, options: &JsonOpti
     }
 }
 
-extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn decode(state: LuaState) -> c_int {
     let options = fetch_options(state);
     let str: &[u8] = laux::lua_get(state, 1);
 
     // Handle JSON decoding errors
-    fn handle_error(state: *mut ffi::lua_State, e: serde_json::Error) -> c_int {
+    fn handle_error(state: LuaState, e: serde_json::Error) -> c_int {
         laux::lua_pushnil(state);
         laux::lua_push(state, e.to_string());
         2
@@ -400,7 +400,7 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
     }
 }
 
-unsafe extern "C-unwind" fn concat(state: *mut ffi::lua_State) -> c_int {
+unsafe extern "C-unwind" fn concat(state: LuaState) -> c_int {
     let options = fetch_options(state);
 
     if laux::lua_type(state, 1) == LuaType::String {
@@ -535,7 +535,7 @@ fn concat_resp_one(
     Ok(())
 }
 
-extern "C-unwind" fn concat_resp(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn concat_resp(state: LuaState) -> c_int {
     let n = laux::lua_top(state);
     if n == 0 {
         return 0;
@@ -594,7 +594,7 @@ extern "C-unwind" fn concat_resp(state: *mut ffi::lua_State) -> c_int {
 /// and that it remains valid for the duration of the function call.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub unsafe extern "C-unwind" fn luaopen_json(state: *mut ffi::lua_State) -> c_int {
+pub unsafe extern "C-unwind" fn luaopen_json(state: LuaState) -> c_int {
     let l = [
         lreg!("decode", decode),
         lreg!("encode", encode),

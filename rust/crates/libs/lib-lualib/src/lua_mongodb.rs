@@ -1,28 +1,28 @@
 use crate::moon_send;
 use dashmap::DashMap;
+use futures::stream::TryStreamExt;
 use lazy_static::lazy_static;
 use lib_core::context::CONTEXT;
-use lib_lua::laux::{LuaArgs, LuaStateRef, LuaTable, LuaValue};
-use lib_lua::luaL_newlib;
-use lib_lua::{self, cstr, ffi, ffi::luaL_Reg, laux, lreg, lreg_null, push_lua_table};
-use mongodb::options::{CreateIndexOptions, FindOptions, IndexOptions, ReadConcern};
-use std::ffi::c_int;
-use std::str::FromStr;
-use std::sync::atomic::AtomicI64;
-use std::sync::Arc;
-use tokio::sync::mpsc;
-
-use mongodb::bson::{doc, oid};
-use mongodb::error::Error;
-use mongodb::{
-    bson::{Bson, Document},
-    options::ClientOptions,
-    Client,
+use lib_lua::{
+    self, cstr, ffi, ffi::luaL_Reg, laux, laux::{LuaArgs, LuaState, LuaTable, LuaValue},
+    luaL_newlib, lreg, lreg_null, push_lua_table,
 };
-use mongodb::{results, Collection, IndexModel};
-use std::time::Duration;
-
-use futures::stream::TryStreamExt;
+use mongodb::{
+    bson::{doc, oid, Bson, Document},
+    error::Error,
+    options::{ClientOptions, CreateIndexOptions, FindOptions, IndexOptions, ReadConcern},
+    results, Client, Collection, IndexModel,
+};
+use std::{
+    ffi::c_int,
+    str::FromStr,
+    sync::{
+        atomic::AtomicI64,
+        Arc,
+    },
+    time::Duration,
+};
+use tokio::sync::mpsc;
 
 lazy_static! {
     static ref DATABASE_CONNECTIONSS: DashMap<String, DatabaseConnection> = DashMap::new();
@@ -322,7 +322,7 @@ async fn database_handler(
     }
 }
 
-extern "C-unwind" fn connect(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn connect(state: LuaState) -> c_int {
     let mut args = LuaArgs::new(1);
 
     let protocol_type: u8 = laux::lua_get(state, args.iter_arg());
@@ -587,7 +587,7 @@ fn make_request(
     db_name: String,
     collection_name: String,
     op_name: &str,
-    state: LuaStateRef,
+    state: LuaState,
     args: &mut LuaArgs,
 ) -> Result<DatabaseRequest, String> {
     let request = match op_name {
@@ -704,7 +704,7 @@ fn make_request(
     Ok(request)
 }
 
-extern "C-unwind" fn operators(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn operators(state: LuaState) -> c_int {
     let mut args = LuaArgs::new(1);
 
     let conn = laux::lua_touserdata::<DatabaseConnection>(state, args.iter_arg())
@@ -754,7 +754,7 @@ extern "C-unwind" fn operators(state: *mut ffi::lua_State) -> c_int {
     }
 }
 
-extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn decode(state: LuaState) -> c_int {
     laux::luaL_checkstack(state, 6, std::ptr::null());
     let result = laux::lua_into_userdata::<DatabaseResponse>(state, 1);
     match *result {
@@ -906,7 +906,7 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
     }
 }
 
-extern "C-unwind" fn find_connection(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn find_connection(state: LuaState) -> c_int {
     let name = laux::lua_get::<&str>(state, 1);
     match DATABASE_CONNECTIONSS.get(name) {
         Some(pair) => {
@@ -990,7 +990,7 @@ fn lua_to_bson(value: LuaValue, is_object_id: bool) -> Result<Bson, String> {
     }
 }
 
-fn bson_to_lua(state: *mut ffi::lua_State, value: &Bson) -> Result<(), String> {
+fn bson_to_lua(state: LuaState, value: &Bson) -> Result<(), String> {
     match value {
         Bson::Double(val) => laux::lua_push(state, *val),
         Bson::String(val) => laux::lua_push(state, val.as_str()),
@@ -1026,7 +1026,7 @@ fn bson_to_lua(state: *mut ffi::lua_State, value: &Bson) -> Result<(), String> {
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C-unwind" fn luaopen_rust_mongodb(state: *mut ffi::lua_State) -> c_int {
+pub extern "C-unwind" fn luaopen_rust_mongodb(state: LuaState) -> c_int {
     let l = [
         lreg!("connect", connect),
         lreg!("find_connection", find_connection),

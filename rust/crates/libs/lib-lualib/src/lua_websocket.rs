@@ -27,7 +27,7 @@ use lib_core::context::CONTEXT;
 use lib_lua::{
     self, cstr,
     ffi::{self, luaL_Reg},
-    laux::{self, lua_into_userdata, LuaTable},
+    laux::{self, lua_into_userdata, LuaState, LuaTable},
     lreg, lreg_null, luaL_newlib,
 };
 
@@ -171,7 +171,7 @@ async fn handle_client(
     };
 }
 
-extern "C-unwind" fn lread(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn lread(state: LuaState) -> c_int {
     let conn =
         laux::lua_touserdata::<WsChannel>(state, 1).expect("Invalid database connect pointer");
     let owner = laux::lua_get(state, 2);
@@ -194,7 +194,7 @@ extern "C-unwind" fn lread(state: *mut ffi::lua_State) -> c_int {
     }
 }
 
-extern "C-unwind" fn lwrite(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn lwrite(state: LuaState) -> c_int {
     let conn =
         laux::lua_touserdata::<WsChannel>(state, 1).expect("Invalid database connect pointer");
 
@@ -231,7 +231,7 @@ extern "C-unwind" fn lwrite(state: *mut ffi::lua_State) -> c_int {
     }
 }
 
-extern "C-unwind" fn lclose(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn lclose(state: LuaState) -> c_int {
     let conn =
         laux::lua_touserdata::<WsChannel>(state, 1).expect("Invalid database connect pointer");
 
@@ -255,7 +255,7 @@ extern "C-unwind" fn lclose(state: *mut ffi::lua_State) -> c_int {
     }
 }
 
-extern "C-unwind" fn lconnect(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn lconnect(state: LuaState) -> c_int {
     let protocol_type: u8 = laux::opt_field(state, 1, "protocol_type").unwrap_or(0);
     let session = laux::opt_field(state, 1, "session").unwrap_or(0);
     let owner = laux::opt_field(state, 1, "owner").unwrap_or_default();
@@ -283,7 +283,7 @@ extern "C-unwind" fn lconnect(state: *mut ffi::lua_State) -> c_int {
     1
 }
 
-extern "C-unwind" fn find_connection(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn find_connection(state: LuaState) -> c_int {
     let id: i64 = laux::lua_get(state, 1);
     match NET.get(&id) {
         Some(pair) => {
@@ -323,7 +323,7 @@ fn version_to_string(version: &reqwest::Version) -> &str {
     }
 }
 
-extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn decode(state: LuaState) -> c_int {
     laux::luaL_checkstack(state, 6, std::ptr::null());
     let response = lua_into_userdata::<WsResponse>(state, 1);
     match *response {
@@ -357,7 +357,7 @@ extern "C-unwind" fn decode(state: *mut ffi::lua_State) -> c_int {
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C-unwind" fn luaopen_rust_websocket(state: *mut ffi::lua_State) -> c_int {
+pub extern "C-unwind" fn luaopen_rust_websocket(state: LuaState) -> c_int {
     let l = [
         lreg!("connect", lconnect),
         lreg!("find_connection", find_connection),

@@ -3,11 +3,11 @@ use csv::ReaderBuilder;
 use lib_lua::{
     self, cstr,
     ffi::{self, luaL_Reg},
-    laux, lreg, lreg_null, luaL_newlib,
+    laux::{self, LuaState}, lreg, lreg_null, luaL_newlib,
 };
 use std::{os::raw::c_int, path::Path};
 
-fn read_csv(state: *mut ffi::lua_State, path: &Path, max_row: usize) -> c_int {
+fn read_csv(state: LuaState, path: &Path, max_row: usize) -> c_int {
     let res = ReaderBuilder::new().has_headers(false).from_path(path);
     unsafe {
         ffi::lua_createtable(state, 0, 0);
@@ -76,7 +76,7 @@ fn read_csv(state: *mut ffi::lua_State, path: &Path, max_row: usize) -> c_int {
     }
 }
 
-fn read_xlxs(state: *mut ffi::lua_State, path: &Path, max_row: usize) -> c_int {
+fn read_xlxs(state: LuaState, path: &Path, max_row: usize) -> c_int {
     let res: Result<Xlsx<_>, _> = open_workbook(path);
     match res {
         Ok(mut workbook) => {
@@ -137,7 +137,7 @@ fn read_xlxs(state: *mut ffi::lua_State, path: &Path, max_row: usize) -> c_int {
     }
 }
 
-extern "C-unwind" fn lua_excel_read(state: *mut ffi::lua_State) -> c_int {
+extern "C-unwind" fn lua_excel_read(state: LuaState) -> c_int {
     let filename: &str = laux::lua_get(state, 1);
     let max_row: usize = laux::lua_opt(state, 2).unwrap_or(usize::MAX);
     let path = Path::new(filename);
@@ -168,7 +168,7 @@ extern "C-unwind" fn lua_excel_read(state: *mut ffi::lua_State) -> c_int {
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C-unwind" fn luaopen_rust_excel(state: *mut ffi::lua_State) -> c_int {
+pub extern "C-unwind" fn luaopen_rust_excel(state: LuaState) -> c_int {
     let l = [lreg!("read", lua_excel_read), lreg_null!()];
 
     luaL_newlib!(state, l);

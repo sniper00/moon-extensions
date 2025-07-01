@@ -5,20 +5,20 @@ use std::{
     marker::PhantomData,
 };
 
-pub type LuaStateRef = *mut ffi::lua_State;
+pub type LuaState = *mut ffi::lua_State;
 
 pub struct LuaNil;
 
 pub trait LuaStack {
-    fn from_checked(state: LuaStateRef, index: i32) -> Self;
+    fn from_checked(state: LuaState, index: i32) -> Self;
 
-    fn from_unchecked(state: LuaStateRef, index: i32) -> Self;
+    fn from_unchecked(state: LuaState, index: i32) -> Self;
 
-    fn from_opt(state: LuaStateRef, index: i32) -> Option<Self>
+    fn from_opt(state: LuaState, index: i32) -> Option<Self>
     where
         Self: Sized;
 
-    fn push(state: LuaStateRef, v: Self);
+    fn push(state: LuaState, v: Self);
 }
 
 macro_rules! impl_lua_stack_integer {
@@ -27,19 +27,19 @@ macro_rules! impl_lua_stack_integer {
             impl LuaStack for $t {
                 #[inline]
                 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-                fn from_checked(state: LuaStateRef, index: i32) -> $t {
+                fn from_checked(state: LuaState, index: i32) -> $t {
                     unsafe { ffi::luaL_checkinteger(state, index) as $t }
                 }
 
                 #[inline]
                 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-                fn from_unchecked(state: LuaStateRef, index: i32) -> $t {
+                fn from_unchecked(state: LuaState, index: i32) -> $t {
                     unsafe { ffi::lua_tointeger(state, index) as $t }
                 }
 
                 #[inline]
                 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-                fn from_opt(state: LuaStateRef, index: i32) -> Option<$t> {
+                fn from_opt(state: LuaState, index: i32) -> Option<$t> {
                     unsafe {
                         if ffi::lua_isinteger(state, index) == 0 {
                             None
@@ -51,7 +51,7 @@ macro_rules! impl_lua_stack_integer {
 
                 #[inline]
                 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-                fn push(state: LuaStateRef, v: $t) {
+                fn push(state: LuaState, v: $t) {
                     unsafe {
                         ffi::lua_pushinteger(state, v as ffi::lua_Integer);
                     }
@@ -66,19 +66,19 @@ impl_lua_stack_integer!(i8, u8, i16, u16, i32, u32, usize, isize, i64, u64);
 impl LuaStack for f64 {
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_checked(state: LuaStateRef, index: i32) -> f64 {
+    fn from_checked(state: LuaState, index: i32) -> f64 {
         unsafe { ffi::luaL_checknumber(state, index) as f64 }
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_unchecked(state: LuaStateRef, index: i32) -> f64 {
+    fn from_unchecked(state: LuaState, index: i32) -> f64 {
         unsafe { ffi::lua_tonumber(state, index) as f64 }
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_opt(state: LuaStateRef, index: i32) -> Option<f64> {
+    fn from_opt(state: LuaState, index: i32) -> Option<f64> {
         unsafe {
             if ffi::lua_isnumber(state, index) == 0 {
                 None
@@ -90,7 +90,7 @@ impl LuaStack for f64 {
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn push(state: LuaStateRef, v: f64) {
+    fn push(state: LuaState, v: f64) {
         unsafe {
             ffi::lua_pushnumber(state, v as ffi::lua_Number);
         }
@@ -100,7 +100,7 @@ impl LuaStack for f64 {
 impl LuaStack for bool {
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_checked(state: LuaStateRef, index: i32) -> bool {
+    fn from_checked(state: LuaState, index: i32) -> bool {
         unsafe {
             ffi::luaL_checktype(state, index, ffi::LUA_TBOOLEAN);
             ffi::lua_toboolean(state, index) != 0
@@ -109,13 +109,13 @@ impl LuaStack for bool {
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_unchecked(state: LuaStateRef, index: i32) -> bool {
+    fn from_unchecked(state: LuaState, index: i32) -> bool {
         unsafe { ffi::lua_toboolean(state, index) != 0 }
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_opt(state: LuaStateRef, index: i32) -> Option<bool> {
+    fn from_opt(state: LuaState, index: i32) -> Option<bool> {
         unsafe {
             if ffi::lua_isnoneornil(state, index) != 0 {
                 None
@@ -127,7 +127,7 @@ impl LuaStack for bool {
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn push(state: LuaStateRef, v: bool) {
+    fn push(state: LuaState, v: bool) {
         unsafe {
             ffi::lua_pushboolean(state, v as c_int);
         }
@@ -137,7 +137,7 @@ impl LuaStack for bool {
 impl LuaStack for &[u8] {
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_checked(state: LuaStateRef, index: i32) -> &'static [u8] {
+    fn from_checked(state: LuaState, index: i32) -> &'static [u8] {
         unsafe {
             let mut len = 0;
             let ptr = ffi::luaL_checklstring(state, index, &mut len);
@@ -147,7 +147,7 @@ impl LuaStack for &[u8] {
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_unchecked(state: LuaStateRef, index: i32) -> &'static [u8] {
+    fn from_unchecked(state: LuaState, index: i32) -> &'static [u8] {
         unsafe {
             let mut len = 0;
             let ptr = ffi::lua_tolstring(state, index, &mut len);
@@ -157,7 +157,7 @@ impl LuaStack for &[u8] {
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_opt(state: LuaStateRef, index: i32) -> Option<&'static [u8]> {
+    fn from_opt(state: LuaState, index: i32) -> Option<&'static [u8]> {
         unsafe {
             if ffi::lua_type(state, index) != ffi::LUA_TSTRING {
                 None
@@ -175,7 +175,7 @@ impl LuaStack for &[u8] {
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn push(state: LuaStateRef, v: &[u8]) {
+    fn push(state: LuaState, v: &[u8]) {
         unsafe {
             ffi::lua_pushlstring(state, v.as_ptr() as *const c_char, v.len());
         }
@@ -185,25 +185,25 @@ impl LuaStack for &[u8] {
 impl LuaStack for &str {
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_checked(state: LuaStateRef, index: i32) -> &'static str {
+    fn from_checked(state: LuaState, index: i32) -> &'static str {
         unsafe { std::str::from_utf8_unchecked(LuaStack::from_checked(state, index)) }
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_unchecked(state: LuaStateRef, index: i32) -> &'static str {
+    fn from_unchecked(state: LuaState, index: i32) -> &'static str {
         unsafe { std::str::from_utf8_unchecked(LuaStack::from_unchecked(state, index)) }
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_opt(state: LuaStateRef, index: i32) -> Option<&'static str> {
+    fn from_opt(state: LuaState, index: i32) -> Option<&'static str> {
         LuaStack::from_opt(state, index).map(|s| unsafe { std::str::from_utf8_unchecked(s) })
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn push(state: LuaStateRef, v: &str) {
+    fn push(state: LuaState, v: &str) {
         unsafe {
             ffi::lua_pushlstring(state, v.as_ptr() as *const c_char, v.len());
         }
@@ -213,25 +213,25 @@ impl LuaStack for &str {
 impl LuaStack for String {
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_checked(state: LuaStateRef, index: i32) -> String {
+    fn from_checked(state: LuaState, index: i32) -> String {
         String::from_utf8_lossy(LuaStack::from_checked(state, index)).into_owned()
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_unchecked(state: LuaStateRef, index: i32) -> String {
+    fn from_unchecked(state: LuaState, index: i32) -> String {
         String::from_utf8_lossy(LuaStack::from_unchecked(state, index)).into_owned()
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_opt(state: LuaStateRef, index: i32) -> Option<String> {
+    fn from_opt(state: LuaState, index: i32) -> Option<String> {
         LuaStack::from_opt(state, index).map(|s| String::from_utf8_lossy(s).into_owned())
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn push(state: LuaStateRef, v: String) {
+    fn push(state: LuaState, v: String) {
         unsafe {
             ffi::lua_pushlstring(state, v.as_ptr() as *const c_char, v.len());
         }
@@ -241,20 +241,20 @@ impl LuaStack for String {
 impl LuaStack for LuaNil {
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_checked(state: LuaStateRef, index: i32) -> LuaNil {
+    fn from_checked(state: LuaState, index: i32) -> LuaNil {
         unsafe {ffi::luaL_checktype(state, index, ffi::LUA_TNIL);}
         LuaNil {  }
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_unchecked(_state: LuaStateRef, _index: i32) -> LuaNil {
+    fn from_unchecked(_state: LuaState, _index: i32) -> LuaNil {
         LuaNil {  }
     }
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn from_opt(state: LuaStateRef, index: i32) -> Option<LuaNil> {
+    fn from_opt(state: LuaState, index: i32) -> Option<LuaNil> {
         if unsafe {
             ffi::lua_isnil(state, index) == 1
         }{
@@ -267,7 +267,7 @@ impl LuaStack for LuaNil {
 
     #[inline]
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    fn push(state: LuaStateRef, _v: LuaNil) {
+    fn push(state: LuaState, _v: LuaNil) {
         unsafe {
             ffi::lua_pushnil(state);
         }
@@ -275,28 +275,28 @@ impl LuaStack for LuaNil {
 }
 
 #[derive(PartialEq)]
-pub struct LuaThread(pub LuaStateRef);
+pub struct LuaThread(pub LuaState);
 
 unsafe impl Send for LuaThread {}
 
 impl LuaThread {
-    pub fn new(l: LuaStateRef) -> Self {
+    pub fn new(l: LuaState) -> Self {
         LuaThread(l)
     }
 }
 
 #[derive(PartialEq)]
-pub struct LuaState(pub LuaStateRef);
+pub struct LuaStateBox(pub LuaState);
 
-unsafe impl Send for LuaState {}
+unsafe impl Send for LuaStateBox {}
 
-impl LuaState {
-    pub fn new(l: LuaStateRef) -> Self {
-        LuaState(l)
+impl LuaStateBox {
+    pub fn new(l: LuaState) -> Self {
+        LuaStateBox(l)
     }
 }
 
-impl Drop for LuaState {
+impl Drop for LuaStateBox {
     fn drop(&mut self) {
         unsafe {
             if !self.0.is_null() {
@@ -306,16 +306,16 @@ impl Drop for LuaState {
     }
 }
 
-pub extern "C-unwind" fn lua_null_function(_: LuaStateRef) -> c_int {
+pub extern "C-unwind" fn lua_null_function(_: LuaState) -> c_int {
     0
 }
 
 pub struct LuaScopePop {
-    state: LuaStateRef,
+    state: LuaState,
 }
 
 impl LuaScopePop {
-    pub fn new(state: LuaStateRef) -> Self {
+    pub fn new(state: LuaState) -> Self {
         LuaScopePop { state }
     }
 }
@@ -329,7 +329,7 @@ impl Drop for LuaScopePop {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C-unwind" fn lua_traceback(state: LuaStateRef) -> c_int {
+pub extern "C-unwind" fn lua_traceback(state: LuaState) -> c_int {
     unsafe {
         let msg = ffi::lua_tostring(state, 1);
         if !msg.is_null() {
@@ -343,7 +343,7 @@ pub extern "C-unwind" fn lua_traceback(state: LuaStateRef) -> c_int {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn opt_field<T>(state: LuaStateRef, mut index: i32, field: &str) -> Option<T>
+pub fn opt_field<T>(state: LuaState, mut index: i32, field: &str) -> Option<T>
 where
     T: LuaStack,
 {
@@ -366,7 +366,7 @@ where
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_get<T>(state: LuaStateRef, index: i32) -> T
+pub fn lua_get<T>(state: LuaState, index: i32) -> T
 where
     T: LuaStack,
 {
@@ -375,7 +375,7 @@ where
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_to<T>(state: LuaStateRef, index: i32) -> T
+pub fn lua_to<T>(state: LuaState, index: i32) -> T
 where
     T: LuaStack,
 {
@@ -383,7 +383,7 @@ where
 }
 
 #[inline]
-pub fn lua_opt<T>(state: LuaStateRef, index: i32) -> Option<T>
+pub fn lua_opt<T>(state: LuaState, index: i32) -> Option<T>
 where
     T: LuaStack,
 {
@@ -391,7 +391,7 @@ where
 }
 
 #[inline]
-pub fn lua_push<T>(state: LuaStateRef, v: T)
+pub fn lua_push<T>(state: LuaState, v: T)
 where
     T: LuaStack,
 {
@@ -433,7 +433,7 @@ impl From<LuaType> for i32 {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_type(state: LuaStateRef, index: i32) -> LuaType {
+pub fn lua_type(state: LuaState, index: i32) -> LuaType {
     let ltype = unsafe { ffi::lua_type(state, index) };
     match ltype {
         ffi::LUA_TNONE => LuaType::None,
@@ -458,7 +458,7 @@ pub fn lua_type(state: LuaStateRef, index: i32) -> LuaType {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_error(state: LuaStateRef, message: &str) -> ! {
+pub fn lua_error(state: LuaState, message: &str) -> ! {
     unsafe {
         ffi::lua_pushlstring(state, message.as_ptr() as *const c_char, message.len());
         ffi::lua_error(state)
@@ -467,13 +467,13 @@ pub fn lua_error(state: LuaStateRef, message: &str) -> ! {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn throw_error(state: LuaStateRef) -> ! {
+pub fn throw_error(state: LuaState) -> ! {
     unsafe { ffi::lua_error(state) }
 }
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn type_name(state: LuaStateRef, idx: i32) -> &'static str {
+pub fn type_name(state: LuaState, idx: i32) -> &'static str {
     unsafe {
         std::ffi::CStr::from_ptr(ffi::lua_typename(state, idx))
             .to_str()
@@ -483,7 +483,7 @@ pub fn type_name(state: LuaStateRef, idx: i32) -> &'static str {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_pushnil(state: LuaStateRef) {
+pub fn lua_pushnil(state: LuaState) {
     unsafe {
         ffi::lua_pushnil(state);
     }
@@ -491,19 +491,19 @@ pub fn lua_pushnil(state: LuaStateRef) {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn is_integer(state: LuaStateRef, index: i32) -> bool {
+pub fn is_integer(state: LuaState, index: i32) -> bool {
     unsafe { ffi::lua_isinteger(state, index) != 0 }
 }
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_top(state: LuaStateRef) -> i32 {
+pub fn lua_top(state: LuaState) -> i32 {
     unsafe { ffi::lua_gettop(state) }
 }
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_settop(state: LuaStateRef, idx: i32) {
+pub fn lua_settop(state: LuaState, idx: i32) {
     unsafe {
         ffi::lua_settop(state, idx);
     }
@@ -511,7 +511,7 @@ pub fn lua_settop(state: LuaStateRef, idx: i32) {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_pop(state: LuaStateRef, n: i32) {
+pub fn lua_pop(state: LuaState, n: i32) {
     unsafe {
         ffi::lua_pop(state, n);
     }
@@ -519,7 +519,7 @@ pub fn lua_pop(state: LuaStateRef, n: i32) {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_checktype(state: LuaStateRef, index: i32, ltype: i32) {
+pub fn lua_checktype(state: LuaState, index: i32, ltype: i32) {
     unsafe {
         ffi::luaL_checktype(state, index, ltype);
     }
@@ -527,7 +527,7 @@ pub fn lua_checktype(state: LuaStateRef, index: i32, ltype: i32) {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn luaL_checkstack(state: LuaStateRef, sz: i32, msg: *const c_char) {
+pub fn luaL_checkstack(state: LuaState, sz: i32, msg: *const c_char) {
     unsafe {
         ffi::luaL_checkstack(state, sz, msg);
     }
@@ -536,7 +536,7 @@ pub fn luaL_checkstack(state: LuaStateRef, sz: i32, msg: *const c_char) {
 ///stack +1
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_as_slice(state: LuaStateRef, index: i32) -> &'static [u8] {
+pub fn lua_as_slice(state: LuaState, index: i32) -> &'static [u8] {
     unsafe {
         let mut len = 0;
         let ptr = ffi::luaL_tolstring(state, index, &mut len);
@@ -546,7 +546,7 @@ pub fn lua_as_slice(state: LuaStateRef, index: i32) -> &'static [u8] {
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_pushlightuserdata(state: LuaStateRef, p: *mut std::ffi::c_void) {
+pub fn lua_pushlightuserdata(state: LuaState, p: *mut std::ffi::c_void) {
     unsafe {
         ffi::lua_pushlightuserdata(state, p);
     }
@@ -555,12 +555,12 @@ pub fn lua_pushlightuserdata(state: LuaStateRef, p: *mut std::ffi::c_void) {
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub fn lua_newuserdata<T>(
-    state: *mut ffi::lua_State,
+    state: LuaState,
     val: T,
     metaname: *const c_char,
     lib: &[ffi::luaL_Reg],
 ) -> Option<&T> {
-    extern "C-unwind" fn lua_dropuserdata<T>(state: *mut ffi::lua_State) -> c_int {
+    extern "C-unwind" fn lua_dropuserdata<T>(state: LuaState) -> c_int {
         unsafe {
             let p = ffi::lua_touserdata(state, 1);
             if p.is_null() {
@@ -593,7 +593,7 @@ pub fn lua_newuserdata<T>(
 
 #[inline]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_touserdata<T>(state: *mut ffi::lua_State, index: i32) -> Option<&'static mut T> {
+pub fn lua_touserdata<T>(state: LuaState, index: i32) -> Option<&'static mut T> {
     unsafe {
         let ptr = ffi::lua_touserdata(state, index);
         let ptr = std::ptr::NonNull::new(ptr)?;
@@ -616,19 +616,19 @@ pub fn lua_touserdata<T>(state: *mut ffi::lua_State, index: i32) -> Option<&'sta
 /// # Returns
 ///
 /// A `Box<T>` containing the Rust object.
-pub fn lua_into_userdata<T>(state: LuaStateRef, index: i32) -> Box<T> {
+pub fn lua_into_userdata<T>(state: LuaState, index: i32) -> Box<T> {
     let p_as_isize: isize = lua_get(state, index);
     unsafe { Box::from_raw(p_as_isize as *mut T) }
 }
 
 pub struct LuaTable {
-    state: LuaStateRef,
+    state: LuaState,
     index: i32,
 }
 
 impl LuaTable {
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    pub fn new(state: LuaStateRef, narr: usize, nrec: usize) -> Self {
+    pub fn new(state: LuaState, narr: usize, nrec: usize) -> Self {
         unsafe {
             ffi::lua_createtable(state, narr as i32, nrec as i32);
             LuaTable {
@@ -639,7 +639,7 @@ impl LuaTable {
     }
 
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    pub fn from_stack(state: LuaStateRef, mut index: i32) -> Self {
+    pub fn from_stack(state: LuaState, mut index: i32) -> Self {
         if index < 0 {
             index = unsafe { ffi::lua_gettop(state) + index + 1 };
         }
@@ -654,7 +654,7 @@ impl LuaTable {
         lua_array_size(self.state, self.index)
     }
 
-    pub fn lua_state(&self) -> LuaStateRef {
+    pub fn lua_state(&self) -> LuaState {
         self.state
     }
 
@@ -836,7 +836,7 @@ impl Drop for LuaArrayIterator<'_> {
 }
 
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub fn lua_array_size(state: *mut ffi::lua_State, idx: i32) -> usize {
+pub fn lua_array_size(state: LuaState, idx: i32) -> usize {
     unsafe {
         ffi::lua_pushnil(state);
         if ffi::lua_next(state, idx) == 0 {
@@ -866,7 +866,6 @@ pub fn lua_array_size(state: *mut ffi::lua_State, idx: i32) -> usize {
                 ffi::lua_pop(state, 2);
                 return 0;
             }
-            return len as usize;
         }
 
         let len = ffi::lua_rawlen(state, idx) as ffi::lua_Integer;
@@ -902,12 +901,12 @@ pub enum LuaValue<'a> {
     Table(LuaTable),
     Function(*const std::ffi::c_void),
     UserData(*mut std::ffi::c_void),
-    Thread(LuaStateRef),
+    Thread(LuaState),
 }
 
 impl LuaValue<'_> {
     #[allow(clippy::not_unsafe_ptr_arg_deref)]
-    pub fn from_stack(state: LuaStateRef, index: i32) -> Self {
+    pub fn from_stack(state: LuaState, index: i32) -> Self {
         match lua_type(state, index) {
             LuaType::None => LuaValue::None,
             LuaType::Nil => LuaValue::Nil,
@@ -970,7 +969,7 @@ impl Display for LuaValue<'_> {
 }
 
 pub struct LuaScopeValue<'a> {
-    state: LuaStateRef,
+    state: LuaState,
     pub value: LuaValue<'a>,
     _marker: PhantomData<&'a mut LuaTable>,
 }

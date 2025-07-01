@@ -1,4 +1,4 @@
-use lib_lua::{cstr, luaL_newlib};
+use lib_lua::{cstr, laux::LuaState, luaL_newlib};
 use anyhow::{anyhow, Result};
 use lib_lua::{
     ffi::{self, luaL_Reg},
@@ -32,7 +32,7 @@ impl NonceSequence for OneNonceSequence {
 /// AES-GCM encryption
 /// Parameters: data (string), key (string), nonce (string, optional)
 /// Returns: encrypted_data (string), nonce (string)
-fn aes_encrypt_imp(state: *mut ffi::lua_State) -> Result<c_int> {
+fn aes_encrypt_imp(state: LuaState) -> Result<c_int> {
     let data: &[u8] = laux::lua_get(state, 1);
     let key: &[u8] = laux::lua_get(state, 2);
 
@@ -77,7 +77,7 @@ fn aes_encrypt_imp(state: *mut ffi::lua_State) -> Result<c_int> {
     Ok(2)
 }
 
-unsafe extern "C-unwind" fn aes_encrypt(state: *mut ffi::lua_State) -> c_int {
+unsafe extern "C-unwind" fn aes_encrypt(state: LuaState) -> c_int {
     match aes_encrypt_imp(state) {
         Ok(n) => n,
         Err(e) => {
@@ -89,7 +89,7 @@ unsafe extern "C-unwind" fn aes_encrypt(state: *mut ffi::lua_State) -> c_int {
 /// AES-GCM decryption
 /// Parameters: encrypted_data (string), key (string), nonce (string)
 /// Returns: decrypted_data (string)
-fn aes_decrypt_imp(state: *mut ffi::lua_State) -> Result<c_int> {
+fn aes_decrypt_imp(state: LuaState) -> Result<c_int> {
     let encrypted_data: &[u8] = laux::lua_get(state, 1);
     let key: &[u8] = laux::lua_get(state, 2);
     let nonce_bytes: &[u8] = laux::lua_get(state, 3);
@@ -127,7 +127,7 @@ fn aes_decrypt_imp(state: *mut ffi::lua_State) -> Result<c_int> {
     Ok(1)
 }
 
-unsafe extern "C-unwind" fn aes_decrypt(state: *mut ffi::lua_State) -> c_int {
+unsafe extern "C-unwind" fn aes_decrypt(state: LuaState) -> c_int {
     match aes_decrypt_imp(state) {
         Ok(n) => n,
         Err(e) => {
@@ -139,7 +139,7 @@ unsafe extern "C-unwind" fn aes_decrypt(state: *mut ffi::lua_State) -> c_int {
 /// Generate random key
 /// Parameters: key_size (number, optional, default: 32)
 /// Returns: key (string)
-unsafe extern "C-unwind" fn generate_key(state: *mut ffi::lua_State) -> c_int {
+unsafe extern "C-unwind" fn generate_key(state: LuaState) -> c_int {
     let key_size = laux::lua_opt(state, 1).unwrap_or(32);
 
     if key_size == 0 || key_size > 64 {
@@ -162,7 +162,7 @@ unsafe extern "C-unwind" fn generate_key(state: *mut ffi::lua_State) -> c_int {
 
 /// Generate random nonce
 /// Returns: nonce (string)
-unsafe extern "C-unwind" fn generate_nonce(state: *mut ffi::lua_State) -> c_int {
+unsafe extern "C-unwind" fn generate_nonce(state: LuaState) -> c_int {
     let rng = SystemRandom::new();
     let mut nonce = [0u8; 12];
 
@@ -179,7 +179,7 @@ unsafe extern "C-unwind" fn generate_nonce(state: *mut ffi::lua_State) -> c_int 
 
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
-pub extern "C-unwind" fn luaopen_rust_crypto(state: *mut ffi::lua_State) -> c_int {
+pub extern "C-unwind" fn luaopen_rust_crypto(state: LuaState) -> c_int {
     let l = [
         lreg!("aes_encrypt", aes_encrypt),
         lreg!("aes_decrypt", aes_decrypt),
