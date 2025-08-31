@@ -342,9 +342,40 @@ extern "C-unwind" fn decode(state: LuaState) -> c_int {
             1
         }
         WsResponse::Read(data) => {
-            let is_binary = data.is_binary();
-            laux::lua_push(state, data.into_data().as_ref());
-            laux::lua_push(state, is_binary);
+            match data {
+                Message::Text(bytes) => {
+                    laux::lua_push(state, bytes.as_bytes());
+                    laux::lua_push(state, "t");
+                }
+                Message::Binary(bytes) => {
+                    laux::lua_push(state, bytes.as_ref());
+                    laux::lua_push(state, "b");
+                }
+                Message::Ping(bytes) => {
+                    laux::lua_push(state, bytes.as_ref());
+                    laux::lua_push(state, "p");
+                }
+                Message::Pong(bytes) => {
+                    laux::lua_push(state, bytes.as_ref());
+                    laux::lua_push(state, "q");
+                }
+                Message::Close(bytes) => {
+                    laux::lua_push(
+                        state,
+                        bytes
+                            .unwrap_or(CloseFrame {
+                                code: CloseCode::Away,
+                                reason: "".into(),
+                            })
+                            .to_string(),
+                    );
+                    laux::lua_push(state, "c");
+                }
+                Message::Frame(_) => {
+                    laux::lua_push(state, "Raw frame. Note, that you're not going to get this value while reading the message.");
+                    laux::lua_push(state, "f");
+                }
+            }
             2
         }
         WsResponse::Error(error) => {

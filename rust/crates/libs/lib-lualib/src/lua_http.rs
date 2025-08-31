@@ -1,15 +1,46 @@
+use dashmap::DashMap;
+use lazy_static::lazy_static;
 use lib_core::context::CONTEXT;
 use lib_lua::{
     self, cstr,
     ffi::{self, luaL_Reg},
     laux::{self, LuaState, LuaTable, LuaValue},
-    lreg, lreg_null, luaL_newlib
+    lreg, lreg_null, luaL_newlib,
 };
-use reqwest::{header::HeaderMap, Method, Version};
+use reqwest::{header::HeaderMap, ClientBuilder, Method, Version};
+use std::time::Duration;
 use std::{error::Error, ffi::c_int, str::FromStr};
 use url::form_urlencoded::{self};
 
 use crate::moon_send;
+
+lazy_static! {
+    static ref HTTP_CLIENTS: DashMap<String, reqwest::Client> = DashMap::new();
+}
+
+fn get_http_client(timeout: u64, proxy: &String) -> reqwest::Client {
+    let name = format!("{}_{}", timeout, proxy);
+    if let Some(client) = HTTP_CLIENTS.get(&name) {
+        return client.clone();
+    }
+
+    let builder = ClientBuilder::new()
+        .timeout(Duration::from_secs(timeout))
+        .use_rustls_tls()
+        .tcp_nodelay(true);
+
+    let client = if proxy.is_empty() {
+        builder.build().unwrap_or_default()
+    } else {
+        match reqwest::Proxy::all(proxy) {
+            Ok(proxy) => builder.proxy(proxy).build().unwrap_or_default(),
+            Err(_) => builder.build().unwrap_or_default(),
+        }
+    };
+
+    HTTP_CLIENTS.insert(name.to_string(), client.clone());
+    client
+}
 
 struct HttpRequest {
     owner: u32,
@@ -41,7 +72,7 @@ fn version_to_string(version: &reqwest::Version) -> &str {
 }
 
 async fn http_request(req: HttpRequest, protocol_type: u8) -> Result<(), Box<dyn Error>> {
-    let http_client = &CONTEXT.get_http_client(req.timeout, &req.proxy);
+    let http_client = get_http_client(req.timeout, &req.proxy);
 
     let response = http_client
         .request(Method::from_str(req.method.as_str())?, req.url)

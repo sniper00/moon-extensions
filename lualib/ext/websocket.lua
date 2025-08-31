@@ -56,9 +56,17 @@ function M.find_connection(id)
     return setmetatable(o, { __index = M })
 end
 
+---@alias WebSocketMessageType
+---| "t" Text
+---| "b" Binary
+---| "p" Ping
+---| "q" Pong
+---| "c" Close
+
 ---@nodiscard
 ---@async
 ---@param timeout? integer Timeout in milliseconds. Default 5000ms
+---@return string|false data, WebSocketMessageType|string message_type
 function M:read(timeout)
     return moon.wait(self.obj:read(moon.id, moon.next_sequence(), timeout or 5000))
 end
